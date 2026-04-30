@@ -1,0 +1,86 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - run: python -c "from pdf2epub.core.parser import PDFParser; from pdf2epub.core.builder import EPUBBuilder; print('Import OK')"
+
+  build-macos:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pyinstaller .
+      - run: |
+          pyinstaller --onedir --windowed \
+            --name "pdf2epub" \
+            --exclude PyQt5 --exclude PySide6 --exclude matplotlib \
+            --hidden-import "customtkinter" \
+            --hidden-import "PIL._tkinter_finder" \
+            --collect-submodules "pdf2epub" \
+            src/pdf2epub/gui.py
+      - run: |
+          # Create DMG for easy distribution
+          pip install dmgbuild 2>/dev/null || true
+          hdiutil create -volname pdf2epub -srcfolder dist/pdf2epub.app \
+            -ov -format UDZO dist/pdf2epub.dmg 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdf2epub-macos
+          path: dist/pdf2epub.dmg
+
+  build-windows:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pyinstaller .
+      - run: |
+          pyinstaller --onefile --windowed `
+            --name "pdf2epub" `
+            --exclude PyQt5 --exclude PySide6 --exclude matplotlib `
+            --hidden-import "customtkinter" `
+            --hidden-import "PIL._tkinter_finder" `
+            --collect-submodules "pdf2epub" `
+            src/pdf2epub/gui.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdf2epub-windows
+          path: dist/pdf2epub.exe
+
+  release:
+    needs: [build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pdf2epub-macos/pdf2epub.dmg
+            pdf2epub-windows/pdf2epub.exe
+          generate_release_notes: true
