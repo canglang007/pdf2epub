@@ -1,7 +1,7 @@
 """Application configuration."""
 
 APP_NAME = "pdf2epub"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 APP_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 # EPUB generation defaults

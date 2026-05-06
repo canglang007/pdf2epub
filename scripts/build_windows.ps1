@@ -6,7 +6,7 @@ Set-Location (Split-Path $MyInvocation.MyCommand.Path -Parent) + "\.."
 pip install -e .
 
 # Clean previous build
-Remove-Item -Recurse -Force build, dist, *.spec -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
 
 # Build GUI executable
 pyinstaller --onefile `

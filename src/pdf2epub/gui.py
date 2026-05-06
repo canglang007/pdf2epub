@@ -112,9 +112,17 @@ class PDF2EPUBApp(ctk.CTk):
         self._convert_btn.configure(state=state)
 
     def _start_conversion(self):
+        input_text = self._input_entry.get().strip()
+        if input_text:
+            self._input_path = Path(input_text)
+
         if self._input_path is None or not self._input_path.exists():
             self._status.configure(text="Error: Please select a valid PDF file.")
             return
+
+        output_text = self._output_entry.get().strip()
+        if output_text:
+            self._output_path = Path(output_text)
 
         if self._output_path is None:
             self._auto_output()

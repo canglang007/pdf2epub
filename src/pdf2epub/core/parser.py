@@ -36,10 +36,17 @@ class PDFParser:
     HEADING_THRESHOLD = 1.3
 
     def __init__(self, source: str | Path | BinaryIO):
-        self._doc = fitz.open(
-            stream=source if isinstance(source, (BinaryIO, bytes)) else None,
-            filename=str(source) if isinstance(source, (str, Path)) else None,
-        )
+        if isinstance(source, (str, Path)):
+            self._doc = fitz.open(str(source))
+        elif isinstance(source, (bytes, bytearray)):
+            self._doc = fitz.open(stream=bytes(source), filetype="pdf")
+        elif hasattr(source, "read"):
+            data = source.read()
+            if not isinstance(data, (bytes, bytearray)):
+                raise TypeError("Binary stream source must return bytes")
+            self._doc = fitz.open(stream=bytes(data), filetype="pdf")
+        else:
+            raise TypeError("source must be a file path, bytes, or binary stream")
 
     def parse(self) -> ParsedDocument:
         doc = ParsedDocument(page_count=len(self._doc))
@@ -76,14 +83,15 @@ class PDFParser:
     def _extract_page(self, page: fitz.Page, page_num: int, body_size: float,
                       doc: ParsedDocument):
         page_dict = page.get_text("dict", flags=fitz.TEXTFLAGS_TEXT)
+        seen_xrefs: set[int] = set()
 
         for block in page_dict.get("blocks", []):
             if block["type"] == 0:
                 self._extract_text_block(block, page_num, body_size, doc)
             elif block["type"] == 1:
-                self._extract_image_block(block, page_num, doc)
+                self._extract_image_block(block, page_num, doc, seen_xrefs)
 
-        self._extract_embedded_images(page, page_num, doc)
+        self._extract_embedded_images(page, page_num, doc, seen_xrefs)
 
     def _extract_text_block(self, block: dict, page_num: int, body_size: float,
                             doc: ParsedDocument):
@@ -186,10 +194,24 @@ class PDFParser:
 
         return merged
 
-    def _extract_image_block(self, block: dict, page_num: int, doc: ParsedDocument):
+    def _extract_image_block(self, block: dict, page_num: int, doc: ParsedDocument,
+                             seen_xrefs: set[int]):
         try:
-            image = self._doc.extract_image(block.get("image", -1))
-            if image:
+            image_ref = block.get("image")
+            if isinstance(image_ref, int):
+                if image_ref in seen_xrefs:
+                    return
+                seen_xrefs.add(image_ref)
+                image = self._doc.extract_image(image_ref)
+            elif isinstance(image_ref, (bytes, bytearray)):
+                image = {
+                    "image": bytes(image_ref),
+                    "ext": block.get("ext", "png"),
+                }
+            else:
+                return
+
+            if image and image.get("image"):
                 doc.blocks.append(ContentBlock(
                     image_data=image.get("image", b""),
                     image_ext=image.get("ext", "png"),
@@ -199,13 +221,12 @@ class PDFParser:
             pass
 
     def _extract_embedded_images(self, page: fitz.Page, page_num: int,
-                                 doc: ParsedDocument):
-        seen = set()
+                                 doc: ParsedDocument, seen_xrefs: set[int]):
         for img in page.get_images(full=True):
             xref = img[0]
-            if xref in seen:
+            if xref in seen_xrefs:
                 continue
-            seen.add(xref)
+            seen_xrefs.add(xref)
             try:
                 base = self._doc.extract_image(xref)
                 image_data = base.get("image", b"")

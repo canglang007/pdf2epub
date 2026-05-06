@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 pip install -e .
 
 # Clean previous build
-rm -rf build dist *.spec
+rm -rf build dist
 
 # Build GUI .app (onedir + windowed = double-clickable .app)
 pyinstaller --onedir \
